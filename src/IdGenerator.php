@@ -147,11 +147,12 @@ class IdGenerator
 
             $queryResult = DB::select($maxQuery);
             $maxFullId = $queryResult[0]->maxid;
-
-            $maxId = substr($maxFullId, $prefixLength, $idLength);
-            return $prefix . str_pad((int)$maxId + 1, $idLength, '0', STR_PAD_LEFT);
+            // Only delete prefix
+            $maxId = (int)str_replace($prefix,'',$maxFullId);
+            // Length value only apply into consecutive number without prefix
+            return $prefix.str_pad((int) $maxId + 1, $length, '0', STR_PAD_LEFT);
         } else {
-            return $prefix . str_pad(1, $idLength, '0', STR_PAD_LEFT);
+            return $prefix.str_pad(1, $length, '0', STR_PAD_LEFT);
         }
     }
 }
