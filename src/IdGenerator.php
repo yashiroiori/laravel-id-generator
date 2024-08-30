@@ -1,10 +1,13 @@
-<?php namespace Haruncpi\LaravelIdGenerator;
+<?php
 
-use Illuminate\Support\Facades\DB;
+namespace Haruncpi\LaravelIdGenerator;
+
 use Exception;
+use Illuminate\Support\Facades\DB;
 
 /**
  * IdGenerator Class
+ *
  * @since 1.0.0
  */
 class IdGenerator
@@ -12,15 +15,15 @@ class IdGenerator
     /**
      * Get type of a field
      *
-     * @param string $table table name
-     * @param string $field field name
+     * @param  string  $table table name
+     * @param  string  $field field name
+     * @return array
      *
      * @throws Exception if field type return null
-     * @return array
      *
      * @since 1.0.0
      */
-    private function getFieldType($table, $field, $connection = null)
+    private function getFieldType($table, $field, $connection)
     {
         if($connection == null){
             $connection = config('database.default');
@@ -39,7 +42,7 @@ class IdGenerator
             $sql .= 'WHERE table_catalog=:database AND table_name=:table';
         }
 
-        $rows = DB::select($sql, ['database' => $database, 'table' => $table]);
+        $rows = DB::connection($connection)->select($sql, ['database' => $database, 'table' => $table]);
         $fieldType = null;
         $fieldLength = 20;
 
@@ -64,28 +67,29 @@ class IdGenerator
         if ($fieldType == null) {
             throw new Exception("$field not found in $table table");
         }
+
         return ['type' => $fieldType, 'length' => $fieldLength];
     }
 
     /**
      * Main function to generate ID
      *
-     * @param array $configArr configuration to generate ID
+     * @param  array  $configArr configuration to generate ID
+     * @return string|int
      *
      * @throws Exception if id generation config invalid
-     * @return string|integer
      *
      * @since 1.0.0
      */
     public static function generate($configArr)
     {
-        if (!array_key_exists('table', $configArr) || $configArr['table'] == '') {
+        if (! array_key_exists('table', $configArr) || $configArr['table'] == '') {
             throw new Exception('Must need a table name');
         }
-        if (!array_key_exists('length', $configArr) || $configArr['length'] == '') {
+        if (! array_key_exists('length', $configArr) || $configArr['length'] == '') {
             throw new Exception('Must specify the length of ID');
         }
-        if (!array_key_exists('prefix', $configArr) || $configArr['prefix'] == '') {
+        if (! array_key_exists('prefix', $configArr) || $configArr['prefix'] == '') {
             throw new Exception('Must specify a prefix of your ID');
         }
 
@@ -93,7 +97,7 @@ class IdGenerator
             if (is_string($configArr['where'])) {
                 throw new Exception('where clause must be an array, you provided string');
             }
-            if (!count($configArr['where'])) {
+            if (! count($configArr['where'])) {
                 throw new Exception('where clause must need at least an array');
             }
         }
@@ -101,8 +105,9 @@ class IdGenerator
 
         $table = $configArr['table'];
         $field = array_key_exists('field', $configArr) ? $configArr['field'] : 'id';
+
         $prefix = $configArr['prefix'];
-        $resetOnPrefixChange =  array_key_exists('reset_on_prefix_change', $configArr)
+        $resetOnPrefixChange = array_key_exists('reset_on_prefix_change', $configArr)
                                 ? $configArr['reset_on_prefix_change']
                                 : false;
         $length = $configArr['length'];
@@ -111,7 +116,7 @@ class IdGenerator
         $tableFieldType = $fieldInfo['type'];
         $tableFieldLength = $fieldInfo['length'];
 
-        if (in_array($tableFieldType, ['int', 'integer', 'bigint', 'numeric']) && !is_numeric($prefix)) {
+        if (in_array($tableFieldType, ['int', 'integer', 'bigint', 'numeric']) && ! is_numeric($prefix)) {
             throw new Exception("$field field type is $tableFieldType but prefix is string");
         }
 
@@ -124,32 +129,30 @@ class IdGenerator
         $whereString = '';
 
         if (array_key_exists('where', $configArr)) {
-            $whereString .= " WHERE ";
+            $whereString .= ' WHERE ';
             foreach ($configArr['where'] as $row) {
-                $whereString .= $row[0] . "=" . $row[1] . " AND ";
+                $whereString .= $row[0].'='.$row[1].' AND ';
             }
         }
         $whereString = rtrim($whereString, 'AND ');
 
-
-        $totalQuery = sprintf("SELECT count(%s) total FROM %s %s", $field, $configArr['table'], $whereString);
-        // Add connection when are multi tenant
+        $totalQuery = sprintf('SELECT count(%s) total FROM %s %s', $field, $configArr['table'], $whereString);
         $total = DB::connection($connection)->select(trim($totalQuery));
 
         if ($total[0]->total) {
             if ($resetOnPrefixChange) {
-                $maxIdSql = "SELECT MAX(%s) AS maxid FROM %s WHERE %s LIKE %s";
-                $maxQuery = sprintf($maxIdSql, $field, $table, $field, "'" . $prefix . "%'");
+                $maxIdSql = 'SELECT MAX(%s) AS maxid FROM %s WHERE %s LIKE %s';
+                $maxQuery = sprintf($maxIdSql, $field, $table, $field, "'".$prefix."%'");
             } else {
-                // Change to select any folio LIKE prefix, this not import length folio
-                $maxQuery = sprintf("SELECT MAX(%s) AS maxid FROM %s WHERE folio LIKE '%s%%'", $field, $table, $prefix);
+                $maxQuery = sprintf('SELECT MAX(%s) AS maxid FROM %s WHERE %s LIKE "%s%%"', $field, $table, $field, $prefix);
             }
 
-            $queryResult = DB::select($maxQuery);
+            $queryResult = DB::connection($connection)->select($maxQuery);
             $maxFullId = $queryResult[0]->maxid;
-            // Only delete prefix
+
+            // $maxId = substr($maxFullId, $prefixLength, $idLength);
             $maxId = (int)str_replace($prefix,'',$maxFullId);
-            // Length value only apply into consecutive number without prefix
+
             return $prefix.str_pad((int) $maxId + 1, $length, '0', STR_PAD_LEFT);
         } else {
             return $prefix.str_pad(1, $length, '0', STR_PAD_LEFT);
